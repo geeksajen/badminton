@@ -1,0 +1,40 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── 課程主表 ────────────────────────────────────────────────
+    // 任何人都能瀏覽課程（首頁不需登入即可看）。
+    // 課程的新增/刪除/改價格只能由教練在 Firebase 後台手動操作（前端一律禁止）。
+    // 唯一允許前端寫入的情況：登入會員在「報名 / 取消」時，
+    // 只能更動 current_registrations 這個欄位（其他欄位都不準動）。
+    match /courses/{courseId} {
+      allow read: if true;
+      allow create, delete: if false;
+      allow update: if request.auth != null
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['current_registrations'])
+        && request.resource.data.current_registrations is int
+        && request.resource.data.current_registrations >= 0;
+    }
+
+    // ── 報名紀錄表 ──────────────────────────────────────────────
+    // 文件 ID 固定為 {uid}_{courseId}。
+    // 每位會員只能讀 / 建 / 改「自己」的報名紀錄，不能看別人的。
+    match /registrations/{regId} {
+      allow read: if request.auth != null
+        && resource.data.user_id == request.auth.uid;
+
+      // 建立時：必須是登入者本人，且文件 ID 要等於 {自己的uid}_{course_id}。
+      allow create: if request.auth != null
+        && request.resource.data.user_id == request.auth.uid
+        && regId == request.auth.uid + '_' + request.resource.data.course_id;
+
+      // 更新時：只能改自己的報名（例如通知已匯款、取消報名）。
+      allow update: if request.auth != null
+        && resource.data.user_id == request.auth.uid
+        && request.resource.data.user_id == request.auth.uid;
+
+      // 不開放前端刪除（保留紀錄，取消是把 status 改成 cancelled）。
+      allow delete: if false;
+    }
+  }
+}

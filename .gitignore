@@ -1,0 +1,25 @@
+# dependencies
+node_modules
+.pnp
+.pnp.js
+
+# build
+dist
+dist-ssr
+
+# env（重要：不要把金鑰上傳到 GitHub）
+.env.local
+.env.*.local
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# editor / os
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.local
