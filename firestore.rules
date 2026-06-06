@@ -20,7 +20,14 @@ service cloud.firestore {
     // 文件 ID 固定為 {uid}_{courseId}。
     // 每位會員只能讀 / 建 / 改「自己」的報名紀錄，不能看別人的。
     match /registrations/{regId} {
-      allow read: if request.auth != null
+      // get：讀單一文件（含 transaction 裡確認「是否已報名」時讀不存在的文件）
+      // → 用 document ID 判斷，resource 為 null 時也安全。
+      allow get: if request.auth != null
+        && regId.matches(request.auth.uid + '_.*');
+
+      // list：Dashboard 的 getDocs + where('user_id','==',uid) 查詢
+      // → 在 list 規則裡 resource 一定是現有文件，可以直接讀 resource.data。
+      allow list: if request.auth != null
         && resource.data.user_id == request.auth.uid;
 
       // 建立時：必須是登入者本人，且文件 ID 要等於 {自己的uid}_{course_id}。
