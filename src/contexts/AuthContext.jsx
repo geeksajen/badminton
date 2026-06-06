@@ -3,8 +3,10 @@ import {
   createUserWithEmailAndPassword,
   onAuthStateChanged,
   signInWithEmailAndPassword,
+  signInWithPopup,
   signOut,
   updateProfile,
+  GoogleAuthProvider,
 } from 'firebase/auth'
 import { auth } from '../firebase/config'
 
@@ -27,7 +29,6 @@ export function AuthProvider({ children }) {
     const cred = await createUserWithEmailAndPassword(auth, email, password)
     if (displayName) {
       await updateProfile(cred.user, { displayName })
-      // updateProfile 不會自動觸發 onAuthStateChanged，手動同步一次顯示名稱
       setUser({ ...cred.user })
     }
     return cred.user
@@ -36,9 +37,15 @@ export function AuthProvider({ children }) {
   const login = (email, password) =>
     signInWithEmailAndPassword(auth, email, password)
 
+  const loginWithGoogle = async () => {
+    const provider = new GoogleAuthProvider()
+    const cred = await signInWithPopup(auth, provider)
+    return cred.user
+  }
+
   const logout = () => signOut(auth)
 
-  const value = { user, loading, register, login, logout }
+  const value = { user, loading, register, login, loginWithGoogle, logout }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
