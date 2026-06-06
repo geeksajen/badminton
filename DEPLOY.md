@@ -1,4 +1,4 @@
-# 🏸 羽球課程報名系統 — 教練上線手冊（白話版）
+# 🏸 羽球課程報名系統 — 上線手冊（白話版）
 
 這份文件假設你**完全不懂程式**。請照著順序一步一步做，遇到要「點按鈕」或「打指令」的地方都會明確寫出來。
 
@@ -38,32 +38,34 @@
 3. 位置（Location）選離台灣近的，例如 **`asia-east1`** 或 **`asia-northeast1`**，按 **啟用 Enable**。
 4. 等它建立完成。
 
-### 1-4 建立兩個集合與第一筆課程
-> 集合（collection）= 一個資料夾；文件（document）= 一筆資料。
+### 1-4 一鍵自動建立集合與範例課程（免手動敲！）
+> 不用在後台一個一個欄位手動建。我們提供 `npm run seed` 一鍵腳本，
+> 會自動建好 `courses`（含 3 堂範例課）和 `registrations` 兩個集合。
+> **防呆**：已存在的課程會自動跳過，不會重複建立、也不會洗掉已有的報名人數。
 
-**建立 `courses`（課程表）：**
-1. 在 Firestore 畫面點 **「+ 開始集合 Start collection」**。
-2. 集合 ID 填 `courses`，按 **下一步**。
-3. 文件 ID 按右邊的 **「自動 ID Auto-ID」**。
-4. 一個一個加入下面這些欄位（Field / 型別 Type / 值 Value）：
+**① 下載「服務帳戶金鑰」（讓腳本有權限寫入，只需做一次）**
+1. 點左上角 **齒輪 ⚙️ → 專案設定 Project settings**。
+2. 點上方分頁 **「服務帳戶 Service accounts」**。
+3. 按 **「產生新的私密金鑰 Generate new private key」**，再按 **產生 Generate**，會下載一個 `.json` 檔。
+4. 把這個檔案**改名為** `serviceAccountKey.json`，放到**專案根目錄**（和 `package.json` 同一層）。
+   > 🔒 這支金鑰很重要，已被設定**不會**上傳到 GitHub，請勿外流。
 
-   | 欄位名稱 | 型別 | 範例值 |
-   |---|---|---|
-   | `title` | string | 週六初階班 |
-   | `coach` | string | 林教練 |
-   | `location` | string | 中正運動中心 3 樓 |
-   | `time` | string | 每週六 09:00–11:00 |
-   | `price` | number | 1200 |
-   | `max_capacity` | number | 12 |
-   | `current_registrations` | number | 0 |
+**② 改成你自己的課程（可選）**
+- 打開 `scripts/seed.mjs`，最上面有一個 `COURSES` 清單，照範例改成你真正的課程即可。
+- 不改也沒關係，先用範例課程跑通整個流程，之後再改。
 
-   > ⚠️ `price`、`max_capacity`、`current_registrations` 型別一定要選 **number**，
-   > 而且 `current_registrations` 一開始固定填 **0**。
-5. 按 **儲存 Save**。之後要新增課程，就在 `courses` 上按 **「+ 新增文件 Add document」** 重複 3～5 即可。
+**③ 執行一鍵建立**
+在專案資料夾的終端機打：
+```bash
+npm install   # 第一次才需要
+npm run seed
+```
+看到 `🎉 完成！` 就成功了。回 Firebase 的 **Firestore Database** 重新整理，
+就會看到 `courses` 和 `registrations` 兩個集合都建好了。
 
-**建立 `registrations`（報名表）：**
-- 這個集合會由系統在使用者報名時**自動建立**，你**不用手動建**。
-- （如果你想先讓它出現：點 **+ 開始集合**，ID 填 `registrations`，隨便建一筆再刪掉也行，但通常不需要。）
+> 之後想**新增或修改課程**，有兩種方式擇一：
+> - 改 `scripts/seed.mjs` 的 `COURSES` 再 `npm run seed`（新增的會建、已存在的會跳過）。
+> - 或直接在 Firebase 後台 `courses` 集合按「+ 新增文件」手動加（記得 `current_registrations` 填 0）。
 
 ### 1-5 拿到「金鑰」填進程式
 1. 點左上角 **齒輪 ⚙️ → 專案設定 Project settings**。

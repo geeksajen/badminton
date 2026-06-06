@@ -15,10 +15,15 @@
 ```bash
 npm install
 cp .env.example .env.local   # 填入 Firebase 金鑰（Windows 用：copy .env.example .env.local）
+npm run seed                 # 一鍵建立 courses/registrations 集合與範例課程（需 serviceAccountKey.json）
 npm run dev                  # 本機開發
 npm run build                # 打包
 npm run deploy               # 部署到 GitHub Pages
 ```
+
+> `npm run seed` 使用 firebase-admin + 服務帳戶金鑰（`serviceAccountKey.json`，已 gitignore）寫入資料，
+> **防呆**：課程已存在即跳過，不覆蓋既有名額；不需放寬安全規則，課程仍維持後台/腳本專屬寫入。
+> 課程清單可在 [scripts/seed.mjs](./scripts/seed.mjs) 的 `COURSES` 編輯。
 
 ## 省 Firestore 額度的設計（對應規格需求）
 - 課程列表：**LocalStorage 暫存 1 小時** + **單次 `getDocs`**（非 `onSnapshot`）。
