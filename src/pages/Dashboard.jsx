@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   collection,
   doc,
@@ -121,6 +121,16 @@ export default function Dashboard() {
     }
   }
 
+  // 個人統計摘要：進行中（待繳費+已確認）、待繳費、已確認。
+  const summary = useMemo(() => {
+    const active = registrations.filter((r) => r.status !== 'cancelled')
+    return {
+      active: active.length,
+      pending: active.filter((r) => r.status === 'pending').length,
+      confirmed: active.filter((r) => r.status === 'confirmed').length,
+    }
+  }, [registrations])
+
   return (
     <div>
       <div className="mb-5">
@@ -129,6 +139,14 @@ export default function Dashboard() {
           嗨，{user?.displayName || user?.email}！這裡是你報名的所有課程。
         </p>
       </div>
+
+      {!loading && !error && registrations.length > 0 && (
+        <div className="mb-5 grid grid-cols-3 gap-3">
+          <SummaryChip label="進行中" value={summary.active} tone="slate" />
+          <SummaryChip label="待繳費" value={summary.pending} tone="amber" />
+          <SummaryChip label="已確認" value={summary.confirmed} tone="brand" />
+        </div>
+      )}
 
       {loading ? (
         <div className="flex h-48 items-center justify-center text-slate-400">
@@ -205,6 +223,22 @@ export default function Dashboard() {
           })}
         </div>
       )}
+    </div>
+  )
+}
+
+function SummaryChip({ label, value, tone }) {
+  const tones = {
+    slate: 'text-slate-800',
+    amber: 'text-amber-600',
+    brand: 'text-brand-600',
+  }
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 text-center shadow-sm">
+      <div className={'text-2xl font-bold ' + (tones[tone] || tones.slate)}>
+        {value}
+      </div>
+      <div className="mt-0.5 text-xs font-medium text-slate-400">{label}</div>
     </div>
   )
 }

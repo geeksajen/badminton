@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   collection,
@@ -27,6 +27,8 @@ export default function Home() {
   const [fromCache, setFromCache] = useState(false)
   const [registeringId, setRegisteringId] = useState(null)
   const [toast, setToast] = useState(null) // { type, msg }
+  const [search, setSearch] = useState('')
+  const [onlyAvailable, setOnlyAvailable] = useState(false)
 
   // 抓課程列表：優先用 LocalStorage 暫存（1 小時），過期才向 Firestore 單次讀取。
   // forceRefresh = true 時略過暫存（例如使用者按「重新整理」按鈕）。
@@ -62,6 +64,24 @@ export default function Home() {
   useEffect(() => {
     loadCourses(false)
   }, [loadCourses])
+
+  // 課程篩選：關鍵字（課名/教練/地點）+「只看尚有名額」。純前端，不額外讀 Firestore。
+  const visibleCourses = useMemo(() => {
+    const kw = search.trim().toLowerCase()
+    return courses.filter((c) => {
+      if (onlyAvailable) {
+        const remaining =
+          (c.max_capacity ?? 0) - (c.current_registrations ?? 0)
+        if (remaining <= 0) return false
+      }
+      if (!kw) return true
+      return (
+        (c.title || '').toLowerCase().includes(kw) ||
+        (c.coach || '').toLowerCase().includes(kw) ||
+        (c.location || '').toLowerCase().includes(kw)
+      )
+    })
+  }, [courses, search, onlyAvailable])
 
   const showToast = (type, msg) => {
     setToast({ type, msg })
@@ -147,12 +167,36 @@ export default function Home() {
     }
   }
 
+  const totalRemaining = courses.reduce(
+    (sum, c) =>
+      sum + Math.max(0, (c.max_capacity ?? 0) - (c.current_registrations ?? 0)),
+    0,
+  )
+
   return (
     <div>
-      <div className="mb-5 flex items-end justify-between gap-3">
+      {/* Hero 橫幅 */}
+      <div className="mb-6 overflow-hidden rounded-3xl bg-gradient-to-br from-brand-600 to-emerald-500 px-6 py-8 text-white shadow-sm sm:px-10 sm:py-10">
+        <div className="inline-flex items-center gap-2 rounded-full bg-white/20 px-3 py-1 text-xs font-semibold backdrop-blur">
+          🏸 線上即時報名
+        </div>
+        <h1 className="mt-3 text-2xl font-bold sm:text-3xl">
+          找到適合你的羽球課程
+        </h1>
+        <p className="mt-2 max-w-xl text-sm text-white/90">
+          初階到進階一站搞定，登入後即可線上報名、追蹤繳費狀態。
+          {courses.length > 0 && (
+            <span className="ml-1 font-semibold">
+              目前 {courses.length} 堂課、尚有 {totalRemaining} 個名額。
+            </span>
+          )}
+        </p>
+      </div>
+
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">課程列表</h1>
-          <p className="mt-1 text-sm text-slate-500">
+          <h2 className="text-xl font-bold text-slate-800">課程列表</h2>
+          <p className="mt-0.5 text-sm text-slate-500">
             選擇喜歡的課程，登入後即可線上報名。
             {fromCache && (
               <span className="ml-1 text-slate-400">（顯示暫存資料）</span>
@@ -161,11 +205,32 @@ export default function Home() {
         </div>
         <button
           onClick={() => loadCourses(true)}
-          className="shrink-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+          className="shrink-0 self-start rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 sm:self-auto"
         >
           重新整理
         </button>
       </div>
+
+      {/* 搜尋 + 篩選（純前端，不額外消耗 Firestore 讀取） */}
+      {courses.length > 0 && (
+        <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center">
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="搜尋課程名稱、教練或地點…"
+            className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+          />
+          <label className="flex shrink-0 cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-600">
+            <input
+              type="checkbox"
+              checked={onlyAvailable}
+              onChange={(e) => setOnlyAvailable(e.target.checked)}
+              className="h-4 w-4 accent-brand-600"
+            />
+            只看尚有名額
+          </label>
+        </div>
+      )}
 
       {toast && (
         <div
@@ -192,9 +257,13 @@ export default function Home() {
         <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-12 text-center text-slate-500">
           目前還沒有課程。教練可至 Firebase 後台的 <code>courses</code> 集合新增課程。
         </div>
+      ) : visibleCourses.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-12 text-center text-slate-500">
+          找不到符合條件的課程，試試其他關鍵字或取消篩選。
+        </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {courses.map((course) => (
+          {visibleCourses.map((course) => (
             <CourseCard
               key={course.id}
               course={course}

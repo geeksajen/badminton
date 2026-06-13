@@ -1,9 +1,10 @@
 export default function CourseCard({ course, onRegister, registering }) {
-  const remaining = Math.max(
-    0,
-    (course.max_capacity ?? 0) - (course.current_registrations ?? 0),
-  )
+  const max = course.max_capacity ?? 0
+  const taken = Math.min(course.current_registrations ?? 0, max)
+  const remaining = Math.max(0, max - taken)
   const isFull = remaining <= 0
+  const pct = max > 0 ? Math.round((taken / max) * 100) : 0
+  const almostFull = !isFull && remaining <= Math.max(1, Math.ceil(max * 0.2))
 
   return (
     <div className="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md">
@@ -17,7 +18,7 @@ export default function CourseCard({ course, onRegister, registering }) {
               : 'bg-brand-100 text-brand-700')
           }
         >
-          {isFull ? '已額滿' : `剩 ${remaining} 位`}
+          {isFull ? '已額滿' : almostFull ? `僅剩 ${remaining} 位` : `剩 ${remaining} 位`}
         </span>
       </div>
 
@@ -41,6 +42,29 @@ export default function CourseCard({ course, onRegister, registering }) {
           </dd>
         </div>
       </dl>
+
+      {/* 報名進度條：視覺化已報名 / 上限 */}
+      <div className="mt-4">
+        <div className="mb-1 flex items-center justify-between text-xs text-slate-400">
+          <span>報名人數</span>
+          <span>
+            {taken}/{max}
+          </span>
+        </div>
+        <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+          <div
+            className={
+              'h-full rounded-full transition-all ' +
+              (isFull
+                ? 'bg-rose-400'
+                : almostFull
+                  ? 'bg-amber-400'
+                  : 'bg-brand-500')
+            }
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      </div>
 
       <button
         onClick={() => onRegister(course)}

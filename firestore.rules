@@ -2,6 +2,17 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // ── 管理員（教練）判定 ──────────────────────────────────────
+    // 用登入者的 Email 判斷是不是教練。這份白名單必須和前端
+    // src/config.js 的 ADMIN_EMAILS 完全一致。
+    // （Email 已由 Firebase Auth 驗證，且 Spark 免費方案即可使用，不需 Cloud Functions。）
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.token.email in [
+          'geeks.ajen@gmail.com'
+        ];
+    }
+
     // ── 課程主表 ────────────────────────────────────────────────
     // 任何人都能瀏覽課程（首頁不需登入即可看）。
     // 課程的新增/刪除/改價格只能由教練在 Firebase 後台手動操作（前端一律禁止）。
@@ -21,24 +32,31 @@ service cloud.firestore {
     // 每位會員只能讀 / 建 / 改「自己」的報名紀錄，不能看別人的。
     match /registrations/{regId} {
       // get：讀單一文件（含 transaction 裡確認「是否已報名」時讀不存在的文件）
-      // → 用 document ID 判斷，resource 為 null 時也安全。
-      allow get: if request.auth != null
-        && regId.matches(request.auth.uid + '_.*');
+      // → 用 document ID 判斷，resource 為 null 時也安全。教練可讀任何單筆。
+      allow get: if isAdmin()
+        || (request.auth != null && regId.matches(request.auth.uid + '_.*'));
 
-      // list：Dashboard 的 getDocs + where('user_id','==',uid) 查詢
+      // list：學員看自己的（Dashboard）；教練看全部（教練後台）。
       // → 在 list 規則裡 resource 一定是現有文件，可以直接讀 resource.data。
-      allow list: if request.auth != null
-        && resource.data.user_id == request.auth.uid;
+      allow list: if isAdmin()
+        || (request.auth != null && resource.data.user_id == request.auth.uid);
 
       // 建立時：必須是登入者本人，且文件 ID 要等於 {自己的uid}_{course_id}。
       allow create: if request.auth != null
         && request.resource.data.user_id == request.auth.uid
         && regId == request.auth.uid + '_' + request.resource.data.course_id;
 
-      // 更新時：只能改自己的報名（例如通知已匯款、取消報名）。
-      allow update: if request.auth != null
-        && resource.data.user_id == request.auth.uid
-        && request.resource.data.user_id == request.auth.uid;
+      // 更新時：
+      //  - 學員：只能改自己的報名（通知已匯款、取消報名），且不能竄改 user_id。
+      //  - 教練：可改任何報名的狀態（確認收款 / 退回），但同樣不能改 user_id。
+      allow update: if (
+          request.auth != null
+          && resource.data.user_id == request.auth.uid
+          && request.resource.data.user_id == request.auth.uid
+        ) || (
+          isAdmin()
+          && request.resource.data.user_id == resource.data.user_id
+        );
 
       // 不開放前端刪除（保留紀錄，取消是把 status 改成 cancelled）。
       allow delete: if false;

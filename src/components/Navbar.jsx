@@ -1,9 +1,11 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { isAdmin } from '../config'
 
 export default function Navbar() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const admin = isAdmin(user)
 
   const handleLogout = async () => {
     await logout()
@@ -32,6 +34,15 @@ export default function Navbar() {
               className="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
             >
               個人專區
+            </Link>
+          )}
+
+          {admin && (
+            <Link
+              to="/admin"
+              className="rounded-lg px-3 py-2 text-sm font-medium text-brand-700 hover:bg-brand-50"
+            >
+              教練後台
             </Link>
           )}
 
