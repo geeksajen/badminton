@@ -11,6 +11,7 @@ import {
 import { db } from '../firebase/config'
 import { useAuth } from '../contexts/AuthContext'
 import { COURSES_CACHE_KEY, clearCache, myRegsCacheKey } from '../utils/cache'
+import CoachApplyCard from '../components/CoachApplyCard'
 
 const STATUS_META = {
   pending: { label: '待繳費', cls: 'bg-amber-100 text-amber-700' },
@@ -141,6 +142,9 @@ export default function Dashboard() {
           嗨，{user?.displayName || user?.email}！這裡是你報名的所有課程。
         </p>
       </div>
+
+      {/* 成為教練：申請 / 審核狀態（系統管理員不顯示） */}
+      <CoachApplyCard />
 
       {!loading && !error && registrations.length > 0 && (
         <div className="mb-5 grid grid-cols-3 gap-3">

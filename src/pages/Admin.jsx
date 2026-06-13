@@ -3,8 +3,8 @@ import { Navigate } from 'react-router-dom'
 import { collection, doc, getDocs, updateDoc } from 'firebase/firestore'
 import { db } from '../firebase/config'
 import { useAuth } from '../contexts/AuthContext'
-import { isAdmin } from '../config'
 import CourseManager from '../components/CourseManager'
+import CoachReview from '../components/CoachReview'
 
 const STATUS_META = {
   pending: { label: '待繳費', cls: 'bg-amber-100 text-amber-700' },
@@ -67,21 +67,19 @@ function exportCsv(rows) {
 }
 
 export default function Admin() {
-  const { user, loading: authLoading } = useAuth()
+  const { loading: authLoading, profileLoading, isStaff, isSystemAdmin } = useAuth()
   const [regs, setRegs] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [busyId, setBusyId] = useState(null)
   const [filter, setFilter] = useState('active')
   const [search, setSearch] = useState('')
-  const [tab, setTab] = useState('regs') // 'regs' | 'courses'
+  const [tab, setTab] = useState('regs') // 'regs' | 'courses' | 'review'
 
-  const admin = isAdmin(user)
-
-  // 教練一次撈出全部報名紀錄（管理員專用，受 Firestore Rules isAdmin() 保護）。
-  // 過濾掉系統初始化用的 _bootstrap 文件。依賴 admin 旗標，登入者變動才重抓。
+  // 教練一次撈出全部報名紀錄（教練 / 系統管理員專用，受 Firestore Rules isStaff() 保護）。
+  // 過濾掉系統初始化用的 _bootstrap 文件。依賴 isStaff，身分變動才重抓。
   const loadAll = useCallback(async () => {
-    if (!admin) return
+    if (!isStaff) return
     setLoading(true)
     setError('')
     try {
@@ -95,11 +93,11 @@ export default function Admin() {
       setRegs(list)
     } catch (err) {
       console.error(err)
-      setError('載入報名資料失敗，請確認你的帳號在管理員白名單內，且 Firestore 規則已更新。')
+      setError('載入報名資料失敗，請確認你是教練 / 系統管理員，且 Firestore 規則已更新。')
     } finally {
       setLoading(false)
     }
-  }, [admin])
+  }, [isStaff])
 
   useEffect(() => {
     loadAll()
@@ -150,15 +148,16 @@ export default function Admin() {
     })
   }, [regs, filter, search])
 
-  if (authLoading) {
+  // 等驗證狀態與角色都載入完，再決定是否放行（避免一進來就誤判導走）。
+  if (authLoading || profileLoading) {
     return (
       <div className="flex h-64 items-center justify-center text-slate-400">
         載入中…
       </div>
     )
   }
-  // 非管理員直接導回首頁（前端擋一層，資料庫規則再擋一層）。
-  if (!admin) return <Navigate to="/" replace />
+  // 非教練 / 系統管理員直接導回首頁（前端擋一層，資料庫規則再擋一層）。
+  if (!isStaff) return <Navigate to="/" replace />
 
   return (
     <div>
@@ -167,20 +166,23 @@ export default function Admin() {
           🧑‍🏫 教練後台
         </div>
         <h1 className="mt-2 text-2xl font-bold text-slate-800">
-          {tab === 'regs' ? '報名管理' : '課程管理'}
+          {tab === 'regs' ? '報名管理' : tab === 'courses' ? '課程管理' : '教練審核'}
         </h1>
         <p className="mt-1 text-sm text-slate-500">
           {tab === 'regs'
             ? '確認學員繳費狀態、掌握各課程報名概況。'
-            : '新增、編輯或刪除課程，學員首頁即時同步。'}
+            : tab === 'courses'
+              ? '新增、編輯或刪除課程，學員首頁即時同步。'
+              : '審核教練申請，可核准、拒絕或停權。（僅系統管理員）'}
         </p>
       </div>
 
-      {/* 分頁切換 */}
+      {/* 分頁切換（教練審核僅系統管理員可見） */}
       <div className="mb-5 inline-flex rounded-xl bg-slate-100 p-1">
         {[
           { key: 'regs', label: '報名管理' },
           { key: 'courses', label: '課程管理' },
+          ...(isSystemAdmin ? [{ key: 'review', label: '教練審核' }] : []),
         ].map((t) => (
           <button
             key={t.key}
@@ -199,6 +201,8 @@ export default function Admin() {
 
       {tab === 'courses' ? (
         <CourseManager />
+      ) : tab === 'review' ? (
+        <CoachReview />
       ) : (
         <>
       {/* 統計卡片 */}

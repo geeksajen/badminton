@@ -13,15 +13,31 @@
    - 只有當使用者真正按下「我要報名」的那一刻，才去讀取並確認當下的剩餘名額。
 4. **防範無窮迴圈**：確保所有負責從 Firestore 抓取資料的 useEffect 都有正確設定依賴陣列（Dependency Array），絕對要防止因程式碼寫錯產生的無窮迴圈而燒光當天免費額度。
 
+# 三種角色與權限模型
+| 能力 | 一般使用者 | 教練 | 系統管理員 |
+|---|:--:|:--:|:--:|
+| 瀏覽 / 報名課程 | ✅ | ✅ | ✅ |
+| 申請 / 管理教練申請 | ✅ | — | — |
+| 課程管理（新增/編輯/刪除） | — | ✅ | ✅ |
+| 報名管理（確認收款/退回） | — | ✅ | ✅ |
+| 教練審核（核准/拒絕/停權） | — | — | ✅ |
+
 # Firestore 資料庫結構設計
-請以下列「最省讀取次數」的架構來設計 NoSQL 資料庫：
-1. **`courses`（課程主表）集合**：
+1. **`users`（使用者身分表）集合**：
+   - 文件 ID：Firebase Auth 的 `uid`。
+   - 欄位：email (string), display_name (string), coach_status (string，可選：'none' 一般使用者、'pending' 待審核、'approved' 已核准教練、'rejected' 申請未通過、'suspended' 已停權), apply_reason (string，申請理由), applied_at (timestamp), reviewed_at (timestamp), review_note (string，管理員備註), created_at (timestamp)。
+   - 登入時 AuthContext 自動建立（初始 coach_status='none'）。學員只能在 none↔pending 之間切換，無法自行升級為 approved（只有系統管理員能核准）。
+
+2. **`courses`（課程主表）集合**：
    - 文件 ID：自動生成（例如：`course_001`）
    - 欄位：title (string), coach (string), location (string), time (string), price (number), max_capacity (number), current_registrations (number)。
-2. **`registrations`（報名紀錄表）集合**：
+   - 教練 / 系統管理員在後台網頁直接 CRUD，或用 seed 腳本初始化。
+
+3. **`registrations`（報名紀錄表）集合**：
    - 文件 ID：格式固定為 `userId_courseId`（例如：`user123_course001`）。這樣一來，前端只要直接查詢該 ID 的文件是否存在（只需 1 次讀取），就能判斷該用戶是否報名過這堂課，不需撈取整張表。
    - 欄位：registration_id (string), user_id (string), user_name (string), user_email (string), course_id (string), course_title (string), status (string，可選：'pending' 待繳費、'confirmed' 已確認、'cancelled' 已取消), payment_notified (boolean，學員是否已按「通知已匯款」), created_at (timestamp)。
    - 取消報名是把 status 改成 `cancelled`（保留紀錄、不刪除）；之後可再次報名，系統會把同一份文件重新啟用回 `pending`。
+   - Firestore 規則確保學員只能改自己的報名（status 只能改為 pending/cancelled），無法自行設為 confirmed（只有教練/管理員能核准）。
 
 # 必要功能與網頁畫面
 1. **導覽列（Navbar）**：顯示系統名稱、首頁連結、個人專區連結（登入後顯示），以及登入/登出按鈕。
@@ -48,11 +64,19 @@
 - **重新報名**：取消後的課程可再次報名（交易偵測既有文件為 cancelled 時改用 update 重新啟用，名額同步 +1）。
 - **安全性強化**：學員只能把自己報名的 `status` 改為 `pending` / `cancelled`，**無法自行設為 `confirmed`**（只有教練能確認收款）；建立報名時強制 `status='pending'`、`payment_notified=false`；`user_id` / `course_id` 不可竄改。
 
-# 🧑‍🏫 教練（管理員）設定方式
-1. 把教練的登入 Email 填入 **`src/config.js`** 的 `ADMIN_EMAILS` 陣列。
-2. 把**同一個 Email** 填入 **`firestore.rules`** 的 `isAdmin()` 函式裡（兩處必須完全一致）。
+# 🧑‍🏫 系統管理員與教練設定方式
+
+**系統管理員（根帳號，Email 白名單）：**
+1. 把管理員 Email 填入 **`src/config.js`** 的 `SYSTEM_ADMIN_EMAILS` 陣列。
+2. 把**同一個 Email** 填入 **`firestore.rules`** 的 `isSystemAdmin()` 函式內（兩處必須完全一致）。
 3. 重新 `npm run deploy` 部署前端；並到 Firebase Console → Firestore → 規則，貼上最新 `firestore.rules` 後**發佈**。
-4. 用該 Email 登入，導覽列就會出現「教練後台」連結。
+4. 用該 Email 登入，導覽列會顯示「系統管理員」徽章，教練後台會出現「教練審核」分頁。
+
+**教練（動態身分，由系統管理員核准）：**
+1. 一般使用者在個人專區點「申請成為教練」，填寫理由後送出。
+2. 系統管理員在教練後台 → 教練審核，看到該申請（待審核會有紅點計數），按「核准」。
+3. 該教練重新整理個人專區 → 卡片變「你已是教練 ✓」，導覽列出現「教練後台」，可管理課程/報名。
+4. 系統管理員可隨時按「停權」停止該教練的權限。
 
 # 🚀 部署上線步驟（完成專案實作後請務必提供）
 
@@ -60,11 +84,11 @@
 
 1. **Firebase 後端設定**：
    - 如何在 Firebase 官網建立一個免費（Spark Plan）專案。
-   - 如何開啟 Authentication 的「Email/密碼」登入方式。
-   - 如何建立 Firestore Database，並建立 `courses`、`registrations` 兩個集合。
+   - 如何開啟 Authentication 的「Email/密碼」登入方式、Google 登入。
+   - 如何建立 Firestore Database，並建立 `users`、`courses`、`registrations` 三個集合。
    - 如何在 Firebase 取得專案的設定金鑰（apiKey 等），並填入 `.env.local`。
-   - 提供一份安全的 Firestore 安全規則（Security Rules），確保只有登入者能報名、且只能修改自己的報名資料。**規則內容以專案根目錄的 `firestore.rules` 為準**，每次更新後都要到 Firebase Console → Firestore → 規則重新貼上並發佈。
-   - **設定教練（管理員）**：見上方「🧑‍🏫 教練（管理員）設定方式」。
+   - 提供一份安全的 Firestore 安全規則（Security Rules），實作三角色權限模型。**規則內容以專案根目錄的 `firestore.rules` 為準**，每次更新後都要到 Firebase Console → Firestore → 規則重新貼上並發佈（包括新增 `users` 集合時）。
+   - **設定系統管理員與教練**：見上方「🧑‍🏫 系統管理員與教練設定方式」。
 2. **GitHub Pages 前端部署**：
    - 如何在 GitHub 建立一個新的儲存庫（Repository）並上傳程式碼。
    - 需要安裝/設定哪些套件（例如 `gh-pages`）、`vite.config.js` 的 `base` 設定該怎麼填。
