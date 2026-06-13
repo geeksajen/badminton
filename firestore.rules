@@ -52,18 +52,26 @@ service cloud.firestore {
       allow list: if isAdmin()
         || (request.auth != null && resource.data.user_id == request.auth.uid);
 
-      // 建立時：必須是登入者本人，且文件 ID 要等於 {自己的uid}_{course_id}。
+      // 建立時：必須是登入者本人，文件 ID 要等於 {自己的uid}_{course_id}，
+      // 且只能以「待繳費、未通知匯款」的初始狀態建立 —
+      // 防止學員一開始就把自己設成 confirmed 跳過繳費確認。
       allow create: if request.auth != null
         && request.resource.data.user_id == request.auth.uid
-        && regId == request.auth.uid + '_' + request.resource.data.course_id;
+        && regId == request.auth.uid + '_' + request.resource.data.course_id
+        && request.resource.data.status == 'pending'
+        && request.resource.data.payment_notified == false;
 
       // 更新時：
-      //  - 學員：只能改自己的報名（通知已匯款、取消報名），且不能竄改 user_id。
+      //  - 學員：只能改自己的報名，且 user_id / course_id 不可竄改；
+      //          狀態只能改成 pending（重新報名）或 cancelled（取消），
+      //          ★ 不能自行設成 confirmed ★ —— 「已確認」只有教練能設。
       //  - 教練：可改任何報名的狀態（確認收款 / 退回），但同樣不能改 user_id。
       allow update: if (
           request.auth != null
           && resource.data.user_id == request.auth.uid
           && request.resource.data.user_id == request.auth.uid
+          && request.resource.data.course_id == resource.data.course_id
+          && request.resource.data.status in ['pending', 'cancelled']
         ) || (
           isAdmin()
           && request.resource.data.user_id == resource.data.user_id
