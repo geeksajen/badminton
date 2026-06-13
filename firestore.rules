@@ -20,11 +20,22 @@ service cloud.firestore {
     // 只能更動 current_registrations 這個欄位（其他欄位都不準動）。
     match /courses/{courseId} {
       allow read: if true;
-      allow create, delete: if false;
-      allow update: if request.auth != null
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['current_registrations'])
-        && request.resource.data.current_registrations is int
-        && request.resource.data.current_registrations >= 0;
+
+      // 教練可在「教練後台」新增 / 刪除課程。新課程的已報名人數必須從 0 開始。
+      allow create: if isAdmin()
+        && request.resource.data.current_registrations == 0;
+      allow delete: if isAdmin();
+
+      // 更新：
+      //  - 教練：可編輯課程任何欄位（名稱、教練、時間、學費、名額上限…）。
+      //  - 一般登入會員：報名 / 取消時只能 +1 / -1 更動 current_registrations，其他欄位都不準動。
+      allow update: if isAdmin()
+        || (
+          request.auth != null
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['current_registrations'])
+          && request.resource.data.current_registrations is int
+          && request.resource.data.current_registrations >= 0
+        );
     }
 
     // ── 報名紀錄表 ──────────────────────────────────────────────

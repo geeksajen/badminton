@@ -4,6 +4,7 @@ import { collection, doc, getDocs, updateDoc } from 'firebase/firestore'
 import { db } from '../firebase/config'
 import { useAuth } from '../contexts/AuthContext'
 import { isAdmin } from '../config'
+import CourseManager from '../components/CourseManager'
 
 const STATUS_META = {
   pending: { label: '待繳費', cls: 'bg-amber-100 text-amber-700' },
@@ -29,6 +30,42 @@ function fmtDate(ts) {
   ).padStart(2, '0')}`
 }
 
+const STATUS_LABEL = { pending: '待繳費', confirmed: '已確認', cancelled: '已取消' }
+
+// 把一個欄位值安全地包成 CSV（處理逗號、引號、換行）。
+function csvCell(v) {
+  const s = String(v ?? '')
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+}
+
+// 依目前篩選結果產生 CSV 並觸發下載（純前端，不需後端）。
+function exportCsv(rows) {
+  const header = ['姓名', 'Email', '課程', '狀態', '已通知匯款', '報名時間']
+  const lines = rows.map((r) =>
+    [
+      r.user_name,
+      r.user_email,
+      r.course_title,
+      STATUS_LABEL[r.status] || r.status,
+      r.payment_notified ? '是' : '否',
+      fmtDate(r.created_at),
+    ]
+      .map(csvCell)
+      .join(','),
+  )
+  // 加 BOM 讓 Excel 正確辨識 UTF-8 中文。
+  const blob = new Blob(['﻿' + [header.join(','), ...lines].join('\r\n')], {
+    type: 'text/csv;charset=utf-8;',
+  })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  const today = new Date().toISOString().slice(0, 10)
+  a.href = url
+  a.download = `報名名單_${today}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 export default function Admin() {
   const { user, loading: authLoading } = useAuth()
   const [regs, setRegs] = useState([])
@@ -37,6 +74,7 @@ export default function Admin() {
   const [busyId, setBusyId] = useState(null)
   const [filter, setFilter] = useState('active')
   const [search, setSearch] = useState('')
+  const [tab, setTab] = useState('regs') // 'regs' | 'courses'
 
   const admin = isAdmin(user)
 
@@ -128,12 +166,41 @@ export default function Admin() {
         <div className="inline-flex items-center gap-2 rounded-full bg-slate-800 px-3 py-1 text-xs font-semibold text-white">
           🧑‍🏫 教練後台
         </div>
-        <h1 className="mt-2 text-2xl font-bold text-slate-800">報名管理</h1>
+        <h1 className="mt-2 text-2xl font-bold text-slate-800">
+          {tab === 'regs' ? '報名管理' : '課程管理'}
+        </h1>
         <p className="mt-1 text-sm text-slate-500">
-          確認學員繳費狀態、掌握各課程報名概況。
+          {tab === 'regs'
+            ? '確認學員繳費狀態、掌握各課程報名概況。'
+            : '新增、編輯或刪除課程，學員首頁即時同步。'}
         </p>
       </div>
 
+      {/* 分頁切換 */}
+      <div className="mb-5 inline-flex rounded-xl bg-slate-100 p-1">
+        {[
+          { key: 'regs', label: '報名管理' },
+          { key: 'courses', label: '課程管理' },
+        ].map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={
+              'rounded-lg px-4 py-1.5 text-sm font-semibold transition ' +
+              (tab === t.key
+                ? 'bg-white text-slate-800 shadow-sm'
+                : 'text-slate-500 hover:text-slate-700')
+            }
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'courses' ? (
+        <CourseManager />
+      ) : (
+        <>
       {/* 統計卡片 */}
       <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatCard label="有效報名" value={stats.total} tone="slate" />
@@ -172,6 +239,14 @@ export default function Admin() {
             placeholder="搜尋課程 / 姓名 / Email"
             className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100 sm:w-56"
           />
+          <button
+            onClick={() => exportCsv(visible)}
+            disabled={visible.length === 0}
+            title="把目前篩選結果匯出成 CSV"
+            className="shrink-0 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+          >
+            匯出 CSV
+          </button>
           <button
             onClick={loadAll}
             className="shrink-0 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
@@ -274,6 +349,8 @@ export default function Admin() {
               </div>
             ))}
           </div>
+        </>
+      )}
         </>
       )}
     </div>
