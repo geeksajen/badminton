@@ -1,4 +1,9 @@
-export default function CourseCard({ course, onRegister, registering }) {
+export default function CourseCard({
+  course,
+  onRegister,
+  registering,
+  registered,
+}) {
   const max = course.max_capacity ?? 0
   const taken = Math.min(course.current_registrations ?? 0, max)
   const remaining = Math.max(0, max - taken)
@@ -66,18 +71,30 @@ export default function CourseCard({ course, onRegister, registering }) {
         </div>
       </div>
 
-      <button
-        onClick={() => onRegister(course)}
-        disabled={isFull || registering}
-        className={
-          'mt-4 w-full rounded-xl px-4 py-2.5 text-sm font-semibold transition ' +
-          (isFull
-            ? 'cursor-not-allowed bg-slate-100 text-slate-400'
-            : 'bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-60')
-        }
-      >
-        {isFull ? '名額已滿' : registering ? '處理中…' : '我要報名'}
-      </button>
+      {registered ? (
+        // 已報名：按鈕改成可點的「已報名」，導向個人專區查看 / 管理。
+        <button
+          onClick={() => onRegister(course)}
+          className="mt-4 flex w-full items-center justify-center gap-1.5 rounded-xl border border-brand-200 bg-brand-50 px-4 py-2.5 text-sm font-semibold text-brand-700 transition hover:bg-brand-100"
+        >
+          <span>✓ 已報名</span>
+          <span className="text-brand-500">·</span>
+          <span className="font-medium">查看</span>
+        </button>
+      ) : (
+        <button
+          onClick={() => onRegister(course)}
+          disabled={isFull || registering}
+          className={
+            'mt-4 w-full rounded-xl px-4 py-2.5 text-sm font-semibold transition ' +
+            (isFull
+              ? 'cursor-not-allowed bg-slate-100 text-slate-400'
+              : 'bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-60')
+          }
+        >
+          {isFull ? '名額已滿' : registering ? '處理中…' : '我要報名'}
+        </button>
+      )}
     </div>
   )
 }

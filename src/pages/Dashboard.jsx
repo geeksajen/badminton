@@ -10,7 +10,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '../firebase/config'
 import { useAuth } from '../contexts/AuthContext'
-import { COURSES_CACHE_KEY, clearCache } from '../utils/cache'
+import { COURSES_CACHE_KEY, clearCache, myRegsCacheKey } from '../utils/cache'
 
 const STATUS_META = {
   pending: { label: '待繳費', cls: 'bg-amber-100 text-amber-700' },
@@ -107,8 +107,10 @@ export default function Dashboard() {
             : r,
         ),
       )
-      // 名額有變動，清掉首頁課程暫存，下次進首頁會看到最新名額。
+      // 名額有變動，清掉首頁課程暫存；同時清掉「我的報名」暫存，
+      // 讓首頁的按鈕從「已報名」恢復成「我要報名」。
       clearCache(COURSES_CACHE_KEY)
+      if (user) clearCache(myRegsCacheKey(user.uid))
     } catch (err) {
       if (err.message === 'ALREADY_CANCELLED') {
         await loadMyRegistrations()

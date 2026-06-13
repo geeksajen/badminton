@@ -35,3 +35,9 @@ export function clearCache(key) {
 }
 
 export const COURSES_CACHE_KEY = 'badminton_courses_cache_v1'
+
+// 「我報名過哪些課」的快取 key（每位使用者一份）。
+// 讓首頁能標示已報名的課程，又不必每次進首頁都查 Firestore。
+export function myRegsCacheKey(uid) {
+  return `badminton_my_regs_cache_v1_${uid}`
+}

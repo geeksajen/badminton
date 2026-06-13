@@ -4,14 +4,17 @@ import {
   collection,
   doc,
   getDocs,
+  query,
   runTransaction,
   serverTimestamp,
+  where,
 } from 'firebase/firestore'
 import { db } from '../firebase/config'
 import { useAuth } from '../contexts/AuthContext'
 import {
   COURSES_CACHE_KEY,
   clearCache,
+  myRegsCacheKey,
   readCache,
   writeCache,
 } from '../utils/cache'
@@ -29,6 +32,7 @@ export default function Home() {
   const [toast, setToast] = useState(null) // { type, msg }
   const [search, setSearch] = useState('')
   const [onlyAvailable, setOnlyAvailable] = useState(false)
+  const [registeredIds, setRegisteredIds] = useState([]) // 我已報名（有效）的 course_id
 
   // 抓課程列表：優先用 LocalStorage 暫存（1 小時），過期才向 Firestore 單次讀取。
   // forceRefresh = true 時略過暫存（例如使用者按「重新整理」按鈕）。
@@ -65,6 +69,44 @@ export default function Home() {
     loadCourses(false)
   }, [loadCourses])
 
+  // 載入「我已報名（未取消）的課程 id」，用來在首頁標示哪些課已報名。
+  // 比照課程列表：先讀 1 小時的 localStorage 快取，過期才向 Firestore 查一次，
+  // 查詢量很小（只撈自己的報名）。依賴 user?.uid，登入者變動才重抓。
+  const loadMyRegs = useCallback(async (forceRefresh = false) => {
+    if (!user) {
+      setRegisteredIds([])
+      return
+    }
+    const cacheKey = myRegsCacheKey(user.uid)
+    if (!forceRefresh) {
+      const cached = readCache(cacheKey)
+      if (cached) {
+        setRegisteredIds(cached)
+        return
+      }
+    }
+    try {
+      const q = query(
+        collection(db, 'registrations'),
+        where('user_id', '==', user.uid),
+      )
+      const snap = await getDocs(q)
+      const ids = snap.docs
+        .map((d) => d.data())
+        .filter((r) => r.status !== 'cancelled')
+        .map((r) => r.course_id)
+      setRegisteredIds(ids)
+      writeCache(cacheKey, ids)
+    } catch (err) {
+      // 失敗不擋畫面，最壞情況就是按鈕沒標示「已報名」，報名時 transaction 仍會把關。
+      console.error(err)
+    }
+  }, [user])
+
+  useEffect(() => {
+    loadMyRegs(false)
+  }, [loadMyRegs])
+
   // 課程篩選：關鍵字（課名/教練/地點）+「只看尚有名額」。純前端，不額外讀 Firestore。
   const visibleCourses = useMemo(() => {
     const kw = search.trim().toLowerCase()
@@ -95,6 +137,12 @@ export default function Home() {
       return
     }
 
+    // 已報名（有效）→ 不重複報名，直接帶去個人專區查看 / 管理。
+    if (registeredIds.includes(course.id)) {
+      navigate('/dashboard')
+      return
+    }
+
     const regId = `${user.uid}_${course.id}`
     setRegisteringId(course.id)
 
@@ -113,33 +161,44 @@ export default function Home() {
         if (!courseSnap.exists()) {
           throw new Error('COURSE_NOT_FOUND')
         }
-        if (regSnap.exists()) {
-          throw new Error('ALREADY_REGISTERED')
-        }
 
         const data = courseSnap.data()
         const current = data.current_registrations ?? 0
         const max = data.max_capacity ?? 0
+
+        // 報名紀錄已存在：若仍有效就是重複報名；若先前已取消，則「重新啟用」。
+        if (regSnap.exists() && regSnap.data().status !== 'cancelled') {
+          throw new Error('ALREADY_REGISTERED')
+        }
         if (current >= max) {
           throw new Error('FULL')
         }
 
-        tx.set(regRef, {
-          registration_id: regId,
-          user_id: user.uid,
-          user_name: user.displayName || user.email,
-          user_email: user.email,
-          course_id: course.id,
-          course_title: data.title || course.title || '',
-          status: 'pending',
-          payment_notified: false,
-          created_at: serverTimestamp(),
-        })
+        if (regSnap.exists()) {
+          // 重新啟用先前取消的報名（文件已存在，用 update 而非 set）。
+          tx.update(regRef, {
+            status: 'pending',
+            payment_notified: false,
+            created_at: serverTimestamp(),
+          })
+        } else {
+          tx.set(regRef, {
+            registration_id: regId,
+            user_id: user.uid,
+            user_name: user.displayName || user.email,
+            user_email: user.email,
+            course_id: course.id,
+            course_title: data.title || course.title || '',
+            status: 'pending',
+            payment_notified: false,
+            created_at: serverTimestamp(),
+          })
+        }
 
         tx.update(courseRef, { current_registrations: current + 1 })
       })
 
-      // 報名成功：本地更新名額 + 清掉暫存（下次進首頁會抓到最新數字）。
+      // 報名成功：本地更新名額與「已報名」清單 + 清掉暫存（下次進首頁會抓到最新數字）。
       setCourses((prev) =>
         prev.map((c) =>
           c.id === course.id
@@ -147,10 +206,19 @@ export default function Home() {
             : c,
         ),
       )
+      setRegisteredIds((prev) =>
+        prev.includes(course.id) ? prev : [...prev, course.id],
+      )
       clearCache(COURSES_CACHE_KEY)
+      clearCache(myRegsCacheKey(user.uid))
       showToast('success', `已報名「${course.title}」，請至個人專區完成繳費！`)
     } catch (err) {
       if (err.message === 'ALREADY_REGISTERED') {
+        // 本地狀態落後（例如在別處報名過）→ 補進清單，按鈕立即變「已報名」。
+        setRegisteredIds((prev) =>
+          prev.includes(course.id) ? prev : [...prev, course.id],
+        )
+        clearCache(myRegsCacheKey(user.uid))
         showToast('error', '你已經報名過這堂課了，請至個人專區查看。')
       } else if (err.message === 'FULL') {
         showToast('error', '抱歉，這堂課剛剛已額滿。')
@@ -269,6 +337,7 @@ export default function Home() {
               course={course}
               onRegister={handleRegister}
               registering={registeringId === course.id}
+              registered={registeredIds.includes(course.id)}
             />
           ))}
         </div>
