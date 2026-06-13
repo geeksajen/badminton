@@ -26,6 +26,16 @@
    - 僅限已登入的會員進入。
    - 顯示該會員目前報名的所有課程列表與目前的審核狀態（例如：待繳費 / 已確認）。
    - 包含一個簡單的操作按鈕（例如：「通知已匯款」或「取消報名」），點擊後會直接更新該筆報名文件的狀態欄位。
+   - 頂部顯示報名統計摘要（進行中 / 待繳費 / 已確認）。
+5. **教練後台（Admin / 教練專區，`/admin`）**：
+   - 僅限「管理員 Email 白名單」內的帳號可進入。採**前後端雙重把關**：前端 `src/config.js` 的 `ADMIN_EMAILS` 控制畫面，Firestore Rules 的 `isAdmin()` 以 `request.auth.token.email` 控制資料庫權限（純 Spark 免費方案，不需 Cloud Functions）。兩份名單必須一致。
+   - **報名管理分頁**：一覽所有學員報名，可依狀態（進行中 / 待繳費 / 已確認 / 已取消）篩選與關鍵字搜尋；「確認收款 / 退回待繳費」一鍵更新狀態；上方統計卡片；「匯出 CSV」把目前篩選結果輸出成 UTF-8(BOM) 檔，Excel 可直接開。
+   - **課程管理分頁**：直接在網頁新增 / 編輯 / 刪除課程，無需再進 Firebase 後台或跑 seed 腳本；含驗證（學費 ≥ 0、名額為正整數、編輯時名額上限不可低於目前已報名人數）。
+
+# 額外實作的增強功能（在基本需求之上）
+- **首頁**：Hero 橫幅、課程搜尋（課名 / 教練 / 地點）與「只看尚有名額」篩選（純前端，不額外讀 Firestore）、報名進度條、已報名課程按鈕顯示「✓ 已報名 · 查看」並導向個人專區。
+- **重新報名**：取消後的課程可再次報名（交易偵測既有文件為 cancelled 時改用 update 重新啟用，名額同步 +1）。
+- **安全性強化**：學員只能把自己報名的 `status` 改為 `pending` / `cancelled`，**無法自行設為 `confirmed`**（只有教練能確認收款）；建立報名時強制 `status='pending'`、`payment_notified=false`；`user_id` / `course_id` 不可竄改。
 
 # 🚀 部署上線步驟（完成專案實作後請務必提供）
 
@@ -36,7 +46,8 @@
    - 如何開啟 Authentication 的「Email/密碼」登入方式。
    - 如何建立 Firestore Database，並建立 `courses`、`registrations` 兩個集合。
    - 如何在 Firebase 取得專案的設定金鑰（apiKey 等），並填入 `.env.local`。
-   - 提供一份安全的 Firestore 安全規則（Security Rules），確保只有登入者能報名、且只能修改自己的報名資料。
+   - 提供一份安全的 Firestore 安全規則（Security Rules），確保只有登入者能報名、且只能修改自己的報名資料。**規則內容以專案根目錄的 `firestore.rules` 為準**，每次更新後都要到 Firebase Console → Firestore → 規則重新貼上並發佈。
+   - **設定教練（管理員）**：把教練的登入 Email 同時填入 `src/config.js` 的 `ADMIN_EMAILS` 與 `firestore.rules` 的 `isAdmin()`，兩處需一致；改完要重新 `npm run deploy` 並重新發佈規則。
 2. **GitHub Pages 前端部署**：
    - 如何在 GitHub 建立一個新的儲存庫（Repository）並上傳程式碼。
    - 需要安裝/設定哪些套件（例如 `gh-pages`）、`vite.config.js` 的 `base` 設定該怎麼填。
